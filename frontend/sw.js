@@ -1,5 +1,5 @@
 // L'appli s'ouvre instantanément depuis le cache ; le réseau ne sert qu'à se mettre à jour.
-const CACHE = 'avant-le-oui-v19';
+const CACHE = 'avant-le-oui-v20';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'fonts/jost.woff', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

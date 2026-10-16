@@ -118,6 +118,9 @@ const S = {
   weights: [],
   photos: [],
   photosLoaded: false,
+  photosAt: 0,
+  inflight: 0,
+  syncAt: 0,
   full: {},
   tab: 'home',
   cal: new Date(),
@@ -129,7 +132,7 @@ const S = {
 /* Le serveur gratuit s'endort : on patiente et on réessaie tout seul pendant ~100 s, avec un compteur */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WAKE_MAX = Number((window.APP_CONFIG || {}).WAKE_MAX) || 100000;
-const VERSION = 19;
+const VERSION = 20;
 let lastNet = '';
 const serverLabel = () => (API ? API.replace(/^https?:\/\//, '') : `via ${location.host}/api`);
 const netDetail = () => `${lastNet || 'aucune réponse'} — serveur : ${serverLabel()} — version ${VERSION}`;
@@ -165,7 +168,14 @@ async function netFetch(path, init, retryable) {
   } finally { clearInterval(tick); }
 }
 
+/* Compte les écritures en cours : tant qu'il y en a, on ne rafraîchit pas (pour ne pas écraser un changement qui part) */
 async function api(path, opts = {}) {
+  const write = (opts.method || 'GET') !== 'GET';
+  if (write) S.inflight++;
+  try { return await apiCore(path, opts); } finally { if (write) S.inflight--; }
+}
+
+async function apiCore(path, opts = {}) {
   if (DEMO) return demoApi(path, opts);
   const method = opts.method || 'GET';
   const init = {
@@ -384,13 +394,32 @@ function saveCache() {
 function loadCache() {
   try { const c = JSON.parse(localStorage.getItem('alo_cache')); return c && c.settings ? c : null; } catch { return null; }
 }
-async function refreshInBackground() {
+/* Synchronisation : l'appli va chercher les données du serveur à l'ouverture, au retour dans l'appli,
+   quand le réseau revient, et toutes les 45 s. Les modifications faites sur un autre appareil apparaissent donc seules. */
+const stateSig = () => JSON.stringify({
+  s: S.settings,
+  d: Object.values(S.days).sort((a, b) => (a.date < b.date ? -1 : 1)),
+  w: [...S.weights].sort((a, b) => (a.date < b.date ? -1 : 1)),
+});
+let lastSync = 0;
+async function refreshInBackground(force) {
+  if (DEMO || !token.v || !S.settings) return false;
+  if (S.inflight > 0) return false;                       // une écriture est en cours : on attend
+  if (!force && Date.now() - lastSync < 4000) return false;
+  lastSync = Date.now();
   try {
-    applyState(await api('/api/state'));
+    const st = await api('/api/state');
+    if (S.inflight > 0) return false;                     // une écriture a démarré entre-temps : on ne l'écrase pas
+    const before = stateSig();
+    applyState(st);
+    S.syncAt = Date.now();
     saveCache();
-    // on ne redessine pas si l'utilisateur est en train de saisir quelque chose
-    if (S.settings && !curSheet && $('#overlay').hidden && S.tab !== 'more') render();
-  } catch (e) { /* hors ligne ou serveur endormi : on garde les données affichées */ }
+    const changed = stateSig() !== before;
+    // on ne redessine que si quelque chose a changé, et pas pendant une saisie
+    if (changed && S.settings && !curSheet && $('#overlay').hidden && S.tab !== 'more') render();
+    if (S.tab === 'photos' && S.photosLoaded && Date.now() - S.photosAt > 30000) loadPhotos(true);
+    return changed;
+  } catch (e) { return false; /* hors ligne ou serveur endormi : on garde les données affichées */ }
 }
 
 function applyState(st) {
@@ -405,6 +434,7 @@ async function loadPhotos(force) {
   try {
     S.photos = await api('/api/photos');
     S.photosLoaded = true;
+    S.photosAt = Date.now();
     if (S.tab === 'photos') render();
   } catch (e) { fail(e); }
 }
@@ -688,8 +718,10 @@ function viewMore() {
   ${DEMO ? `<section class="sec"><h2 class="sec-t"><span>Mode démo</span></h2><p class="small mute center" style="margin:-6px 0 18px">Pas encore de serveur : tes données restent sur cet appareil. Elles seront remplacées par la vraie base une fois connectée.</p><button class="btn ghost block" data-act="demo-sample">Charger des données d’exemple</button><button class="btn danger block" style="margin-top:10px" data-act="demo-reset">Tout effacer</button></section>` : ''}
   <section class="sec" style="padding-bottom:20px">
     <button class="btn ghost block" data-act="logout">Se déconnecter</button>
+    ${DEMO ? '' : `<button class="btn ghost block" style="margin-bottom:14px" data-act="sync">Synchroniser maintenant</button>
+    <p class="small mute center">${S.syncAt ? `Dernière synchronisation : ${new Date(S.syncAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'Pas encore synchronisé depuis l’ouverture'}</p>`}
     <p class="small mute center" style="margin-top:18px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
-    <p class="small mute center" style="margin-top:6px">Version 19</p>
+    <p class="small mute center" style="margin-top:6px">Version 20</p>
   </section>`;
 }
 
@@ -1041,8 +1073,17 @@ document.addEventListener('click', async (e) => {
   switch (act) {
     case 'tab':
       S.tab = el.dataset.tab; render(); window.scrollTo(0, 0);
-      if (S.tab === 'photos') loadPhotos();
+      if (S.tab === 'photos') loadPhotos(Date.now() - S.photosAt > 30000);
       break;
+    case 'sync': {
+      el.disabled = true;
+      const ch = await refreshInBackground(true);
+      el.disabled = false;
+      if (S.tab === 'photos') loadPhotos(true);
+      render();
+      toast(ch ? 'Données mises à jour' : S.syncAt && Date.now() - S.syncAt < 5000 ? 'Déjà à jour' : 'Impossible de synchroniser');
+      break;
+    }
     case 'login': doLogin(); break;
     case 'retry': boot(); break;
     case 'logout': token.v = null; showLogin(); break;
@@ -1217,7 +1258,16 @@ document.addEventListener('keydown', (e) => {
 setInterval(() => { if (!DEMO && !document.hidden && token.v) fetch(API + '/api/health').catch(() => {}); }, 9 * 60 * 1000);
 
 /* Au retour dans l'appli, on rafraîchit pour passer au bon jour */
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.settings && S.tab !== 'more') render(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !S.settings) return;
+  if (S.tab !== 'more') render();                         // passe au bon jour si minuit est passé
+  refreshInBackground();
+});
+if (window.addEventListener) {
+  window.addEventListener('focus', () => refreshInBackground());
+  window.addEventListener('online', () => refreshInBackground(true));
+}
+setInterval(() => { if (!document.hidden) refreshInBackground(); }, 45000);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
