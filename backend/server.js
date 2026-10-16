@@ -68,11 +68,21 @@ const samePassword = (a, b) => crypto.timingSafeEqual(sha(a), sha(b));
 const app = express();
 app.set('trust proxy', 1);
 
-const allowed = FRONTEND_URL.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean);
+// Adresses autorisées : on ne garde que « https://domaine » (sans chemin, sans slash final, sans majuscules)
+const normalize = (u) => {
+  const t = String(u).trim();
+  if (!t) return '';
+  const withScheme = /^https?:\/\//i.test(t) ? t : `https://${t}`; // on tolère l'oubli du « https:// »
+  try { return new URL(withScheme).origin.toLowerCase(); } catch { return t.replace(/\/+$/, '').toLowerCase(); }
+};
+const allowed = FRONTEND_URL.split(',').map(normalize).filter(Boolean);
+console.log('Origines autorisées :', allowed.length ? allowed.join(', ') : '(toutes)');
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || !allowed.length || allowed.includes(origin)) return cb(null, true);
-    cb(new Error('Origine non autorisée'));
+    if (!origin || !allowed.length || allowed.includes(origin.toLowerCase())) return cb(null, true);
+    // On ne plante plus : on refuse poliment et on écrit l'adresse exacte dans les logs
+    console.warn(`CORS : origine refusée « ${origin} ». Autorisées : ${allowed.join(', ')}`);
+    cb(null, false);
   },
 }));
 app.use(express.json({ limit: '8mb' }));

@@ -629,7 +629,7 @@ function viewMore() {
   <section class="sec" style="padding-bottom:20px">
     <button class="btn ghost block" data-act="logout">Se déconnecter</button>
     <p class="small mute center" style="margin-top:18px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
-    <p class="small mute center" style="margin-top:6px">Version 12</p>
+    <p class="small mute center" style="margin-top:6px">Version 14</p>
   </section>`;
 }
 
@@ -659,7 +659,7 @@ function showLogin() {
   <div class="gate">
     <div class="gate-top">${brand()}<p class="lead">Ton carnet d’entraînement jusqu’au mariage.</p></div>
     <div class="gate-card">
-      <label class="field"><span>Mot de passe</span><input id="pw" type="password" autocomplete="current-password"></label>
+      <label class="field"><span>Mot de passe</span><input id="pw" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password"></label>
       <p class="err" id="login-err"></p>
       <button class="btn block" data-act="login">Entrer</button>
     </div>
@@ -693,7 +693,13 @@ function showOnboarding() {
   $('#view').innerHTML = `
   <div class="gate">
     <div class="gate-top">${rings('gate-rings')}<h1>Fixe<br>la date</h1><p class="lead">Quelques chiffres pour lancer ton compte à rebours jusqu’au grand jour.</p></div>
-    <div class="gate-card">${settingsForm({ name: '', weddingDate: plusMonths(6), startDate: addDays(todayStr(), -1), startWeight: '', goalWeight: '', creatineDose: 5 }, true)}</div>
+    <div class="gate-card">
+      ${DEMO
+        ? '<div class="callout" style="margin:0 0 24px">Mode démo : ce site n’est pas relié au serveur, donc aucun mot de passe n’est demandé et tes données restent sur cet appareil.</div>'
+        : ''}
+      ${settingsForm({ name: '', weddingDate: plusMonths(6), startDate: addDays(todayStr(), -1), startWeight: '', goalWeight: '', creatineDose: 5 }, true)}
+      ${DEMO ? '' : '<p class="center" style="margin-top:22px"><button class="link" data-act="logout">Déjà inscrit ? Revenir à la connexion</button></p>'}
+    </div>
   </div>`;
 }
 
@@ -712,7 +718,12 @@ async function saveSettings(onboarding) {
     S.tab = 'home';
     render();
     window.scrollTo(0, 0);
-  } catch (e) { fail(e); btn.disabled = false; }
+  } catch (e) {
+    fail(e);
+    const er = $('#f-err');
+    if (er && e.message !== 'unauth') er.textContent = e.message;   // l'erreur reste affichée dans le formulaire
+    btn.disabled = false;
+  }
 }
 
 function splash(html) { const s = $('#splash'); s.innerHTML = html; s.hidden = false; }

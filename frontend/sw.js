@@ -1,5 +1,5 @@
 // Mise en cache de l'enveloppe de l'appli. Les données viennent toujours du serveur.
-const CACHE = 'avant-le-oui-v12';
+const CACHE = 'avant-le-oui-v14';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
