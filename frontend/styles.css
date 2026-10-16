@@ -24,6 +24,8 @@
 }
 
 * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+/* Pas de zoom au double appui : le défilement et le pincement restent possibles */
+html, body, * { touch-action: manipulation; }
 html { background: var(--papier); color-scheme: light; font-variant-numeric: lining-nums; }
 body {
   font-family: var(--sans); font-size: 17px; line-height: 1.5; font-weight: 400; color: var(--encre);
