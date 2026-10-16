@@ -17,7 +17,7 @@ const DOW_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', '
 const $ = (s, el = document) => el.querySelector(s);
 const token = {
   get v() { try { return localStorage.getItem('alo_token'); } catch { return null; } },
-  set v(x) { try { x ? localStorage.setItem('alo_token', x) : localStorage.removeItem('alo_token'); } catch {} },
+  set v(x) { try { if (x) localStorage.setItem('alo_token', x); else { localStorage.removeItem('alo_token'); localStorage.removeItem('alo_cache'); } } catch {} },
 };
 
 
@@ -125,17 +125,52 @@ const S = {
 /* =====================================================
    Réseau
    ===================================================== */
+/* Le serveur gratuit s'endort : on patiente et on réessaie tout seul pendant ~100 s, avec un compteur */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const WAKE_MAX = Number((window.APP_CONFIG || {}).WAKE_MAX) || 100000;
+
+function wakeUi(sec) {
+  const txt = `Le serveur se réveille… ${sec} s. Ça peut prendre jusqu’à une minute et demie.`;
+  const m = document.querySelector('#splash-msg'); if (m) m.textContent = txt;
+  const e = document.querySelector('#login-err'); if (e) e.textContent = txt;
+}
+
+async function netFetch(path, init, retryable) {
+  const t0 = Date.now();
+  const tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); if (s >= 3) wakeUi(s); }, 1000);
+  try {
+    for (;;) {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const to = ctrl && retryable ? setTimeout(() => ctrl.abort(), 20000) : null;
+      try {
+        const res = await fetch(API + path, ctrl ? { ...init, signal: ctrl.signal } : init);
+        if (to) clearTimeout(to);
+        // 502/503/504 : le serveur n'est pas encore prêt, la requête n'a pas été traitée : on peut réessayer sans risque
+        if ([502, 503, 504].includes(res.status) && Date.now() - t0 < WAKE_MAX) { await sleep(3000); continue; }
+        return res;
+      } catch (e) {
+        if (to) clearTimeout(to);
+        // on ne rejoue automatiquement que les lectures et la connexion (pas d'envoi en double d'une photo)
+        if (!retryable || Date.now() - t0 >= WAKE_MAX) throw e;
+        await sleep(2500);
+      }
+    }
+  } finally { clearInterval(tick); }
+}
+
 async function api(path, opts = {}) {
   if (DEMO) return demoApi(path, opts);
+  const method = opts.method || 'GET';
+  const init = {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token.v ? { Authorization: 'Bearer ' + token.v } : {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  };
   let res;
   try {
-    res = await fetch(API + path, {
-      method: opts.method || 'GET',
-      headers: { 'Content-Type': 'application/json', ...(token.v ? { Authorization: 'Bearer ' + token.v } : {}) },
-      body: opts.body ? JSON.stringify(opts.body) : undefined,
-    });
+    res = await netFetch(path, init, method === 'GET' || path === '/api/login');
   } catch {
-    throw new Error('Impossible de joindre le serveur.');
+    throw new Error('Le serveur ne répond pas. Vérifie ta connexion puis réessaie. Si ça continue, l’adresse du site n’est peut-être pas autorisée côté serveur.');
   }
   if (res.status === 401 && path !== '/api/login') {
     token.v = null;
@@ -143,7 +178,7 @@ async function api(path, opts = {}) {
     throw new Error('unauth');
   }
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error || 'Une erreur est survenue.');
+  if (!res.ok) throw new Error(json.error || (res.status >= 500 ? 'Le serveur est indisponible pour le moment. Réessaie dans un instant.' : 'Une erreur est survenue.'));
   return json;
 }
 
@@ -331,6 +366,23 @@ async function reloadState() {
     applyState(st);
     render();
   } catch (e) { fail(e); }
+}
+
+/* Copie locale des dernières données : l'appli s'ouvre tout de suite, même si le serveur dort */
+function saveCache() {
+  if (DEMO || !S.settings) return;
+  try { localStorage.setItem('alo_cache', JSON.stringify({ settings: S.settings, days: Object.values(S.days), weights: S.weights })); } catch {}
+}
+function loadCache() {
+  try { const c = JSON.parse(localStorage.getItem('alo_cache')); return c && c.settings ? c : null; } catch { return null; }
+}
+async function refreshInBackground() {
+  try {
+    applyState(await api('/api/state'));
+    saveCache();
+    // on ne redessine pas si l'utilisateur est en train de saisir quelque chose
+    if (S.settings && !curSheet && $('#overlay').hidden && S.tab !== 'more') render();
+  } catch (e) { /* hors ligne ou serveur endormi : on garde les données affichées */ }
 }
 
 function applyState(st) {
@@ -629,7 +681,7 @@ function viewMore() {
   <section class="sec" style="padding-bottom:20px">
     <button class="btn ghost block" data-act="logout">Se déconnecter</button>
     <p class="small mute center" style="margin-top:18px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
-    <p class="small mute center" style="margin-top:6px">Version 14</p>
+    <p class="small mute center" style="margin-top:6px">Version 16</p>
   </section>`;
 }
 
@@ -640,6 +692,7 @@ function render() {
   if (!S.settings) return;
   document.body.classList.remove('bare');
   $('#view').innerHTML = VIEWS[S.tab]();
+  saveCache();
   if (S.tab === 'home') animateCount();
   const tabs = $('#tabs');
   tabs.hidden = false;
@@ -731,6 +784,16 @@ function splash(html) { const s = $('#splash'); s.innerHTML = html; s.hidden = f
 async function boot() {
   if (DEMO && !token.v) token.v = 'demo';
   if (!token.v) return showLogin();
+  // Ouverture instantanée : on affiche les dernières données connues, puis on se met à jour en arrière-plan
+  const cached = DEMO ? null : loadCache();
+  if (cached) {
+    applyState(cached);
+    $('#splash').hidden = true;
+    S.tab = 'home';
+    render();
+    refreshInBackground();
+    return;
+  }
   splash(`<div class="spin"></div><p id="splash-msg"></p>`);
   const slow = setTimeout(() => { const m = $('#splash-msg'); if (m) m.textContent = 'Le serveur se réveille, ça peut prendre une minute…'; }, 2500);
   try {
