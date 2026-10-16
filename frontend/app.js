@@ -128,6 +128,9 @@ const S = {
 /* Le serveur gratuit s'endort : on patiente et on réessaie tout seul pendant ~100 s, avec un compteur */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WAKE_MAX = Number((window.APP_CONFIG || {}).WAKE_MAX) || 100000;
+const VERSION = 17;
+let lastNet = '';
+const netDetail = () => `${lastNet || 'aucune réponse'} — serveur : ${API.replace('https://', '')} — version ${VERSION}`;
 
 function wakeUi(sec) {
   const txt = `Le serveur se réveille… ${sec} s. Ça peut prendre jusqu’à une minute et demie.`;
@@ -141,15 +144,17 @@ async function netFetch(path, init, retryable) {
   try {
     for (;;) {
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const to = ctrl && retryable ? setTimeout(() => ctrl.abort(), 20000) : null;
+      const to = ctrl && retryable ? setTimeout(() => ctrl.abort(), 30000) : null;
       try {
         const res = await fetch(API + path, ctrl ? { ...init, signal: ctrl.signal } : init);
         if (to) clearTimeout(to);
         // 502/503/504 : le serveur n'est pas encore prêt, la requête n'a pas été traitée : on peut réessayer sans risque
+        if ([502, 503, 504].includes(res.status)) lastNet = `réponse HTTP ${res.status}`;
         if ([502, 503, 504].includes(res.status) && Date.now() - t0 < WAKE_MAX) { await sleep(3000); continue; }
         return res;
       } catch (e) {
         if (to) clearTimeout(to);
+        lastNet = e && e.name === 'AbortError' ? 'pas de réponse après 30 s' : `échec réseau (${(e && e.message) || 'inconnu'})`;
         // on ne rejoue automatiquement que les lectures et la connexion (pas d'envoi en double d'une photo)
         if (!retryable || Date.now() - t0 >= WAKE_MAX) throw e;
         await sleep(2500);
@@ -170,7 +175,7 @@ async function api(path, opts = {}) {
   try {
     res = await netFetch(path, init, method === 'GET' || path === '/api/login');
   } catch {
-    throw new Error('Le serveur ne répond pas. Vérifie ta connexion puis réessaie. Si ça continue, l’adresse du site n’est peut-être pas autorisée côté serveur.');
+    throw new Error('Le serveur ne répond pas. Vérifie ta connexion puis réessaie.');
   }
   if (res.status === 401 && path !== '/api/login') {
     token.v = null;
@@ -681,7 +686,7 @@ function viewMore() {
   <section class="sec" style="padding-bottom:20px">
     <button class="btn ghost block" data-act="logout">Se déconnecter</button>
     <p class="small mute center" style="margin-top:18px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
-    <p class="small mute center" style="margin-top:6px">Version 16</p>
+    <p class="small mute center" style="margin-top:6px">Version 17</p>
   </section>`;
 }
 
@@ -715,6 +720,7 @@ function showLogin() {
       <label class="field"><span>Mot de passe</span><input id="pw" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password"></label>
       <p class="err" id="login-err"></p>
       <button class="btn block" data-act="login">Entrer</button>
+      <p class="small mute center" style="margin-top:22px">${DEMO ? 'Mode démo' : `Serveur : ${esc(API.replace('https://', ''))}`} · version ${VERSION}</p>
     </div>
   </div>`;
   setTimeout(() => { const i = $('#pw'); if (i) i.focus(); }, 50);
@@ -735,7 +741,7 @@ async function doLogin() {
   } catch (e) {
     clearTimeout(slow);
     btn.disabled = false;
-    $('#login-err').textContent = e.message;
+    $('#login-err').textContent = /ne répond pas/.test(e.message) ? `${e.message} (${netDetail()})` : e.message;
   }
 }
 
@@ -804,7 +810,7 @@ async function boot() {
   } catch (e) {
     clearTimeout(slow);
     if (e.message === 'unauth') return;
-    splash(`<p>${esc(e.message)}</p><button class="btn" data-act="retry">Réessayer</button>`);
+    splash(`<p>${esc(e.message)}</p><p class="small mute" style="max-width:22em">${esc(netDetail())}</p><button class="btn" data-act="retry">Réessayer</button><a class="btn ghost" href="${esc(API)}/api/health" target="_blank" rel="noopener">Tester le serveur</a>`);
   }
 }
 
