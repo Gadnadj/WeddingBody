@@ -223,13 +223,7 @@ h1, h2, h3 { margin: 0; font-weight: 500; }
 .field input, .field textarea { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--encre); border-radius: 0; color: var(--encre); font: 500 19px var(--sans); padding: 8px 0 10px; min-height: 46px; }
 .field textarea { font-size: 17px; font-weight: 400; resize: none; min-height: 88px; line-height: 1.4; border: 1px solid var(--ligne); padding: 10px 12px; margin-top: 6px; }
 .field input:focus, .field textarea:focus { outline: 0; border-color: var(--or); }
-.field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
-.field { min-width: 0; }
-.field input { min-width: 0; max-width: 100%; }
-/* Les champs de date des téléphones ont une largeur minimale : on la neutralise pour qu'ils restent dans la colonne */
-.field input[type="date"] { -webkit-appearance: none; appearance: none; display: block; font-size: 17px; padding-right: 0; }
-.field input[type="date"]::-webkit-date-and-time-value { text-align: left; min-width: 0; }
-.field input[type="date"]::-webkit-calendar-picker-indicator { margin: 0 0 0 4px; padding: 0; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { height: 44px; padding: 0 18px; border-radius: 0; background: transparent; border: 1px solid var(--encre); font-size: 16px; font-weight: 500; }
 .chip.on { background: var(--encre); color: var(--sur-encre); }
