@@ -7,8 +7,10 @@
 const API = ((window.APP_CONFIG || {}).API_URL || '').replace(/\/$/, '');
 // Pas de backend configuré : l'appli tourne en mode démo, données stockées sur l'appareil
 const DEMO = !API || API.includes('TON-API');
-const TYPES = ['Pecs', 'Dos', 'Épaules', 'Bras', 'Jambes', 'Full body', 'Cardio', 'Mobilité'];
+const TYPES = ['Pecs', 'Dos', 'Épaules', 'Bras', 'Jambes', 'Cardio', 'Handstand', 'Abdos'];
 const POSES = ['Face', 'Profil', 'Dos'];
+// Abréviations pour les petites cases du calendrier
+const SHORT = { Pecs: 'Pecs', Dos: 'Dos', 'Épaules': 'Épa.', Bras: 'Bras', Jambes: 'Jamb.', Cardio: 'Card.', Handstand: 'Hand.', Abdos: 'Abdos' };
 const DOW = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const DOW_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 
@@ -17,6 +19,74 @@ const token = {
   get v() { try { return localStorage.getItem('alo_token'); } catch { return null; } },
   set v(x) { try { x ? localStorage.setItem('alo_token', x) : localStorage.removeItem('alo_token'); } catch {} },
 };
+
+
+/* Messages du jour : un différent chaque jour ({j} = jours restants avant le mariage) */
+const MESSAGES = [
+  'Une séance faite vaut mieux qu’une séance parfaite.',
+  'Le jour J, tu remercieras celui d’aujourd’hui.',
+  'Plus que {j} jours. Chaque séance compte.',
+  'Pas besoin d’être motivé. Il suffit de commencer.',
+  'La créatine, c’est tous les jours. Comme la régularité.',
+  'Petit à petit, ça devient une habitude, puis une évidence.',
+  'Ton futur toi te regarde. Fais-lui plaisir.',
+  'Ce n’est pas un sprint, c’est une préparation de {j} jours.',
+  'Dors bien : le muscle se construit au repos.',
+  'Bois de l’eau. Beaucoup. Ta créatine te dit merci.',
+  'Même une séance courte fait avancer le compteur.',
+  'Les photos ne mentent pas, et elles te feront sourire.',
+  'Aujourd’hui, un peu mieux qu’hier. C’est tout.',
+  'Tiens ton handstand une seconde de plus.',
+  'Le plus dur, c’est la porte de la salle. Ensuite, tout va bien.',
+  'Les abdos se font en cuisine autant qu’à la salle.',
+  'Pèse-toi le dimanche, à jeun : toujours les mêmes conditions.',
+  'Une mauvaise séance reste une séance faite.',
+  'Tu te prépares pour un des plus beaux jours de ta vie. Ça mérite un effort.',
+  'La régularité bat l’intensité.',
+  'Échauffe-toi bien. Un blessé ne progresse pas.',
+  'Ne compare pas ta semaine 2 à la semaine 20 d’un autre.',
+  'Chaque croix dans le calendrier est une victoire.',
+  'Cinq minutes de plus que d’habitude. Pas plus.',
+  'Mange des protéines, dors tes huit heures, et laisse le temps faire.',
+  'La fatigue passe, la fierté reste.',
+  'Aujourd’hui, ton seul adversaire, c’est le canapé.',
+  'Un pas après l’autre : il reste {j} jours pour y arriver.',
+  'Respire, serre, pousse. Recommence.',
+  'Avance à ton rythme, mais avance.',
+  'Les progrès sont lents à voir et rapides à perdre : continue.',
+  'Fais-toi plaisir à la salle, pas seulement du mal.',
+  'Étire-toi après : tes muscles te le rendront.',
+  'Un jour de repos fait partie du programme.',
+  'Souris au miroir : tu as commencé, c’est déjà beaucoup.',
+  'Ce que tu fais aujourd’hui se verra sur les photos du mariage.',
+  'Fixe l’objectif, puis oublie-le et fais juste la séance du jour.',
+  'Tu n’as pas besoin de tout changer. Juste de recommencer demain.',
+  'Une bonne posture vaut mieux qu’une charge lourde.',
+  'La discipline, c’est se faire une promesse et la tenir.',
+  'Garde le contrôle du mouvement : la qualité avant la charge.',
+  '{j} jours, c’est assez pour changer beaucoup de choses.',
+  'Chaque goutte de sueur est un petit acompte sur le grand jour.',
+  'Un verre d’eau, ta créatine, et c’est parti.',
+  'Tu as le droit d’être fatigué. Pas celui d’abandonner.',
+  'Celui qui s’entraîne les jours de flemme gagne la semaine.',
+  'Respecte ton sommeil : c’est là que tu progresses.',
+  'Fais une photo aujourd’hui : dans trois mois, tu seras content de l’avoir.',
+  'L’équilibre en handstand se travaille un peu chaque jour, comme tout le reste.',
+  'Ne saute ni l’échauffement, ni le repos.',
+  'Toi, de la régularité et {j} jours : le résultat suivra.',
+  'Moins de pression, plus de constance.',
+  'Une habitude, ça se construit une journée à la fois.',
+  'Pendant la séance, le téléphone de côté. Juste toi et la fonte.',
+  'Le mariage, c’est dans {j} jours. Le corps, c’est maintenant.',
+  'Fais-le pour toi d’abord.',
+  'Tu fais ce que beaucoup remettent à plus tard.',
+  'Prends ta créatine, bois de l’eau, avance.',
+];
+function messageDuJour(t, toWed) {
+  const pool = MESSAGES.filter((m) => toWed > 0 || !m.includes('{j}'));
+  const dayNo = Math.floor(parse(t).getTime() / 864e5);
+  return pool[((dayNo % pool.length) + pool.length) % pool.length].replace('{j}', String(Math.max(0, toWed)));
+}
 
 /* =====================================================
    Dates & formats
@@ -32,8 +102,11 @@ const mondayIdx = (d) => (d.getDay() + 6) % 7; // lundi = 0
 const nextSunday = () => { const d = new Date(); d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); return ymd(d); };
 const plusMonths = (n) => { const d = new Date(); d.setMonth(d.getMonth() + n); return ymd(d); };
 const kgf = (n) => (Math.round(n * 10) / 10).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+// Chaque chiffre dans une case de même largeur : les colonnes de nombres s'alignent parfaitement
+const fixedNum = (str) => String(str).replace(/[0-9]/g, (c) => `<i class="dg">${c}</i>`).replace(/,/g, '<i class="cm">,</i>');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const plural = (n, a, b) => (n > 1 ? b : a);
+
 
 /* =====================================================
    État
@@ -95,6 +168,10 @@ async function demoApi(path, opts) {
     return JSON.parse(JSON.stringify({ settings: db.settings, days: Object.values(db.days), weights: db.weights }));
   }
   if (path === '/api/settings') { db.settings = { id: 'main', ...b }; demoSave(); return db.settings; }
+  if (path === '/api/days/clear-planned') {
+    Object.keys(db.days).forEach((k) => { const d = db.days[k]; if (d.status === 'planned' && k >= b.from) { if (!d.type && !d.note && !d.creatine) delete db.days[k]; else d.status = ''; } });
+    demoSave(); return {};
+  }
   if (path === '/api/days/bulk') {
     b.dates.forEach((d) => { if (!db.days[d] || db.days[d].status !== 'done') db.days[d] = { ...(db.days[d] || { date: d, type: '', note: '', creatine: false }), status: 'planned' }; });
     demoSave(); return { planned: b.dates.length };
@@ -114,6 +191,11 @@ async function demoApi(path, opts) {
   if (path === '/api/photos' && m === 'POST') { const p = { id: uid(), ...b }; db.photos.push(p); demoSave(); const { data, ...meta } = p; return meta; }
   if ((r = path.match(/^\/api\/photos\/(.+)$/))) {
     if (m === 'DELETE') { db.photos = db.photos.filter((p) => p.id !== r[1]); demoSave(); return {}; }
+    if (m === 'PUT') {
+      const p = db.photos.find((x) => x.id === r[1]);
+      if (p) { p.date = b.date; if (b.pose) p.pose = b.pose; demoSave(); const { data, ...meta } = p; return meta; }
+      throw new Error('Photo introuvable.');
+    }
     const p = db.photos.find((x) => x.id === r[1]);
     return { id: r[1], data: p ? p.data : '' };
   }
@@ -127,7 +209,7 @@ function demoSeed() {
   db.weights = [];
   for (let i = 0, d = start; d <= t; i++, d = addDays(d, 7)) db.weights.push({ id: uid(), date: d, kg: Math.round((84 - i * 0.62 + (i % 3 === 1 ? 0.3 : 0)) * 10) / 10 });
   db.days = {};
-  const types = ['Pecs', 'Dos', 'Jambes', 'Épaules', 'Cardio', 'Full body'];
+  const types = ['Pecs', 'Dos', 'Jambes', 'Épaules', 'Cardio', 'Handstand', 'Abdos'];
   let n = 0;
   for (let d = start; d <= addDays(t, 21); d = addDays(d, 1)) {
     const wd = mondayIdx(parse(d)), past = d <= t, train = [0, 2, 4, 5].includes(wd);
@@ -192,21 +274,40 @@ const IC = {
   right: '<path d="M9.5 5l7 7-7 7"/>',
 };
 const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${IC[k]}</svg>`;
-const RINGS = '<svg class="rings" viewBox="0 0 78 48" aria-hidden="true"><circle cx="26" cy="24" r="19"/><circle cx="52" cy="24" r="19"/></svg>';
 
 /* =====================================================
-   Le mètre (compte à rebours et progression du poids)
+   Repères : cercle = prévue, croix = faite
    ===================================================== */
-function tape({ count, every, pct, label, small }) {
-  let t = '';
-  for (let i = 0; i <= count; i++) {
-    const l = ((i / count) * 100).toFixed(3);
-    const big = i % every === 0;
-    const mid = !big && every % 2 === 0 && i % (every / 2) === 0;
-    t += `<i class="t ${big ? 'l' : mid ? 'm' : ''}" style="left:${l}%"></i>`;
-    if (big) t += `<b class="n ${i === count ? 'end' : ''}" style="left:${l}%">${label(i)}</b>`;
-  }
-  return `<div class="tape ${small ? 'small' : ''}"><div class="past" style="width:${pct}%"></div>${t}<span class="pin" style="left:${pct}%"></span></div>`;
+const circleMark = () => '<svg class="mk" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/></svg>';
+const crossMark = () => '<svg class="mk" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>';
+const dashMark = () => '<svg class="mk" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>';
+const rings = (cls = '') => `<svg class="${cls}" viewBox="0 0 120 70" aria-hidden="true"><circle cx="44" cy="35" r="27"/><circle cx="76" cy="35" r="27"/></svg>`;
+const brand = () => `${rings('gate-rings')}<h1>Avant le oui</h1>`;
+// Sur le calendrier : un jour entouré (prévu) ou barré d'une croix (fait), comme sur un calendrier papier
+const ringOverlay = () => '<svg class="ov ring" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="40"/></svg>';
+const strikeOverlay = () => '<svg class="ov strike" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0L100 100M100 0L0 100"/></svg>';
+
+function picks(act, cur) {
+  const b = (v, label, mk, cls) => `<button class="pick ${cur === v ? 'on' : ''} ${cls}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${mk}<span>${label}</span></button>`;
+  return `<div class="picks" role="group">${b('', 'Repos', dashMark(), 'is-rest')}${b('planned', 'Prévue', circleMark(), 'is-planned')}${b('done', 'Faite', crossMark(), 'is-done')}</div>`;
+}
+
+/* Le nombre de jours se déroule de 0 à sa valeur, une seule fois à l'ouverture */
+function animateCount() {
+  if (S.intro) return;
+  S.intro = true;
+  if (!window.matchMedia || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const el = document.querySelector('.hero-n');
+  if (!el) return;
+  const to = Number(el.dataset.n) || 0;
+  if (to < 2) return;
+  const t0 = Date.now(), dur = 1100;
+  const step = () => {
+    const p = Math.min(1, (Date.now() - t0) / dur);
+    el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3)));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 /* =====================================================
@@ -253,78 +354,77 @@ async function loadPhotos(force) {
    ===================================================== */
 function viewHome() {
   const s = S.settings, t = todayStr();
-  const toWed = diff(t, s.weddingDate);
-  const toStart = diff(t, s.startDate);
+  const toWed = diff(t, s.weddingDate), toStart = diff(t, s.startDate);
   const total = Math.max(1, diff(s.startDate, s.weddingDate));
   const elapsed = Math.min(total, Math.max(0, diff(s.startDate, t)));
   const weeks = Math.max(1, Math.ceil(total / 7));
+  const nowWeek = toStart > 0 ? -1 : Math.min(weeks - 1, Math.floor(elapsed / 7));
+  const pct = ((elapsed / total) * 100).toFixed(1);
   const day = S.days[t] || blankDay(t);
 
   const h = new Date().getHours();
   const hello = (h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir') + (s.name ? ' ' + esc(s.name) : '');
-
   const cap = toStart > 0
     ? `Le programme démarre ${esc(fmt(s.startDate, { weekday: 'long', day: 'numeric', month: 'long' }))}, dans ${toStart} ${plural(toStart, 'jour', 'jours')}.`
-    : toWed <= 0 ? 'Le jour est arrivé.' : `Semaine ${Math.min(weeks, Math.floor(elapsed / 7) + 1)} sur ${weeks}.`;
+    : toWed <= 0 ? 'Le jour est arrivé.' : `Semaine ${nowWeek + 1} sur ${weeks}`;
 
   const dose = s.creatineDose || 5;
   const streak = creatineStreak();
   const last7 = Array.from({ length: 7 }, (_, i) => addDays(t, i - 6));
 
-  // poids
   const cur = curWeight(), goal = s.goalWeight, rest = Math.abs(cur - goal);
   const reached = progress() >= 1;
   const verb = goal < s.startWeight ? 'à perdre' : 'à prendre';
-  const range = Math.abs(s.startWeight - s.goalWeight);
-  const wCount = Math.max(1, Math.round(range));
-  const wEvery = Math.max(1, Math.ceil(wCount / 6));
-  const dir = s.goalWeight < s.startWeight ? 1 : -1;
   const lw = lastWeighDate();
   const since = lw ? diff(lw, t) : 99;
 
-  // semaine
   const monday = addDays(t, -mondayIdx(new Date()));
   const weekHtml = Array.from({ length: 7 }, (_, i) => {
     const d = addDays(monday, i), st = (S.days[d] || {}).status || '';
-    return `<button class="wd ${st} ${d === t ? 'today' : ''}" data-act="open-day" data-date="${d}" aria-label="${esc(fmt(d, { weekday: 'long', day: 'numeric', month: 'long' }))}"><span>${DOW[i]}</span><b>${parse(d).getDate()}</b></button>`;
+    return `<button class="wd ${d === t ? 'today' : ''} ${d < s.startDate ? 'before' : ''}" data-act="open-day" data-date="${d}" aria-label="${esc(fmt(d, { weekday: 'long', day: 'numeric', month: 'long' }))}"><span>${DOW[i]}</span><b>${parse(d).getDate()}</b><i class="m ${st === 'planned' ? 'p' : st === 'done' ? 'f' : ''}">${st === 'planned' ? circleMark() : st === 'done' ? crossMark() : ''}</i></button>`;
   }).join('');
 
-  const doneTotal = countDays((d) => d.status === 'done');
-  const monthPrefix = t.slice(0, 7);
-  const doneMonth = countDays((d) => d.status === 'done' && d.date.startsWith(monthPrefix));
-  const creTotal = countDays((d) => d.creatine);
+  const doneMonth = countDays((d) => d.status === 'done' && d.date.startsWith(t.slice(0, 7)));
+  const upcoming = Object.values(S.days).filter((d) => d.status === 'planned' && d.date >= t).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+  const wFirst = sortedWeights().length ? sortedWeights()[0].kg : s.startWeight;
+  const wDelta = Math.round((cur - wFirst) * 10) / 10;
+  const wDeltaTxt = wDelta === 0 ? '0' : (wDelta < 0 ? '−' : '+') + kgf(Math.abs(wDelta));
+  const nextTxt = upcoming ? fmt(upcoming.date, { weekday: 'short', day: 'numeric' }).replace('.', '') : '—';
+  const n = Math.max(0, toWed);
 
   return `
-  <header class="sec hero">
-    <p class="hello">${hello}</p>
-    <span class="count-n" aria-label="${Math.max(0, toWed)} jours">${Math.max(0, toWed)}</span>
-    <p class="count-l">${toWed === 1 ? 'jour' : 'jours'} avant le oui</p>
-    <p class="count-d">${esc(fmt(s.weddingDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</p>
-    ${tape({ count: weeks, every: weeks > 16 ? 4 : 2, pct: (elapsed / total) * 100, label: (i) => i })}
-    <p class="tape-cap">${cap}</p>
-  </header>
+  <p class="hello">${hello}</p>
 
-  <section class="sec">
-    <h2>Créatine</h2>
-    <div class="creatine">
-      <button class="cr-btn ${day.creatine ? 'on' : ''}" data-act="creatine" aria-pressed="${day.creatine}" aria-label="Créatine prise aujourd'hui">
-        <svg viewBox="0 0 40 40"><path d="M9 21l8 8L31 12"/></svg>
-      </button>
-      <div>
-        <h3>${day.creatine ? 'C’est pris' : `${dose} g à prendre`}</h3>
-        <p class="sub">${streak > 0 ? `${streak} ${plural(streak, 'jour', 'jours')} de suite` : 'Pas encore de série'}</p>
-      </div>
-    </div>
-    <div class="dots" aria-hidden="true">${last7.map((d) => `<i class="${(S.days[d] || {}).creatine ? 'on' : ''}"></i>`).join('')}</div>
+  <section class="hero"><div class="hero-in">
+    ${rings('hero-rings')}
+    <p class="hero-k">${toStart > 0 ? 'Dans' : 'Plus que'}</p>
+    <div class="hero-n" data-n="${n}" aria-label="${n} jours">${n}</div>
+    <p class="hero-l">${n === 1 ? 'jour' : 'jours'} avant le oui</p>
+    <p class="hero-d">${esc(fmt(s.weddingDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</p>
+    <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i><b style="left:${pct}%"></b></div>
+    <p class="hero-c">${cap}</p>
+  </div></section>
+
+  <section class="msg" aria-label="Message du jour">
+    <span class="qm" aria-hidden="true">“</span>
+    <p>${esc(messageDuJour(t, toWed))}</p>
+    <small>Message du jour</small>
   </section>
 
   <section class="sec">
-    <h2>Séance du jour</h2>
-    <div class="seg" role="group" aria-label="Séance du jour">
-      <button class="${!day.status ? 'on' : ''}" data-act="today-status" data-v="">Repos</button>
-      <button class="${day.status === 'planned' ? 'on' : ''}" data-act="today-status" data-v="planned">Prévue</button>
-      <button class="${day.status === 'done' ? 'on done' : ''}" data-act="today-status" data-v="done">Faite</button>
+    <h2 class="sec-t"><span>Créatine</span></h2>
+    <div class="cre">
+      <button class="cre-btn ${day.creatine ? 'on' : ''}" data-act="creatine" aria-pressed="${day.creatine}" aria-label="Créatine prise aujourd'hui"><svg viewBox="0 0 40 40"><path d="M9 21l8 8L31 12"/></svg></button>
+      <p class="big">${day.creatine ? 'C’est pris' : `${dose} g à prendre`}</p>
+      <p class="sub">${streak > 0 ? `${streak} ${plural(streak, 'jour', 'jours')} de suite` : 'Pas encore de série'}</p>
     </div>
+    <p class="cap7">Les 7 derniers jours</p>
+    <div class="week7">${last7.map((d) => `<div class="dt ${d === t ? 'today' : ''}"><i class="${(S.days[d] || {}).creatine ? 'on' : ''}"></i><span>${DOW[mondayIdx(parse(d))]}</span></div>`).join('')}</div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sec-t"><span>Séance du jour</span></h2>
+    ${picks('today-status', day.status)}
     <div class="today-meta">
       <span>${day.type ? esc(day.type) : 'Aucun type choisi'}</span>
       <button class="link" data-act="open-day" data-date="${t}">Type et notes</button>
@@ -332,26 +432,27 @@ function viewHome() {
   </section>
 
   <section class="sec">
-    <div class="sec-head"><h2>Poids</h2><button class="link" data-act="open-weight">Me peser</button></div>
-    <div class="w-line">
-      <span class="w-now">${kgf(cur)}</span><span class="w-unit">kg</span>
-      <span class="w-goal">objectif<br>${kgf(goal)} kg</span>
+    <h2 class="sec-t"><span>Poids</span></h2>
+    <div class="poids">
+      <div><span class="kg">${kgf(cur)}</span><span class="u">kg</span></div>
+      <div class="obj">objectif<b>${kgf(goal)} kg</b></div>
     </div>
-    ${tape({ count: wCount, every: wEvery, pct: progress() * 100, small: true, label: (i) => Math.round(s.startWeight - dir * i * (range / wCount)) })}
+    <div class="pl" aria-hidden="true"><i style="width:${(progress() * 100).toFixed(1)}%"></i><b style="left:${(progress() * 100).toFixed(1)}%"></b></div>
     <p class="w-note">${reached ? 'Objectif atteint. Bravo !' : `Il reste ${kgf(rest)} kg ${verb}.`}</p>
-    ${since >= 7 ? `<div class="callout"><span>${lw ? `Dernière pesée il y a ${since} jours.` : 'Aucune pesée enregistrée.'}</span><button class="btn sm" data-act="open-weight">Me peser</button></div>` : ''}
+    <button class="btn ghost block" data-act="open-weight">Me peser</button>
+    ${since >= 7 ? `<div class="callout">${lw ? `Dernière pesée il y a ${since} jours.` : 'Aucune pesée enregistrée.'}</div>` : ''}
   </section>
 
   <section class="sec">
-    <div class="sec-head"><h2>Cette semaine</h2><button class="link" data-act="tab" data-tab="cal">Calendrier</button></div>
+    <h2 class="sec-t"><span>Cette semaine</span></h2>
     <div class="week">${weekHtml}</div>
+    <p class="center" style="margin-top:6px"><button class="link" data-act="tab" data-tab="cal">Voir le calendrier</button></p>
   </section>
 
-  <section class="stats">
-    <div class="stat"><b>${doneTotal}</b><span>${plural(doneTotal, 'séance faite', 'séances faites')}</span></div>
-    <div class="stat"><b>${doneMonth}</b><span>ce mois-ci</span></div>
-    <div class="stat"><b>${streak}</b><span>${plural(streak, 'jour', 'jours')} de créatine d’affilée</span></div>
-    <div class="stat"><b>${creTotal}</b><span>${plural(creTotal, 'dose prise', 'doses prises')} au total</span></div>
+  <section class="stats3">
+    <div class="st"><b>${doneMonth}</b><span>${plural(doneMonth, 'séance faite', 'séances faites')} ce mois-ci</span></div>
+    <div class="st"><b>${wDeltaTxt}</b><span>kg depuis le départ</span></div>
+    <div class="st"><b>${esc(nextTxt)}</b><span>${upcoming ? 'prochaine séance prévue' : 'aucune séance prévue'}</span></div>
   </section>`;
 }
 
@@ -370,55 +471,72 @@ function viewCal() {
     const day = S.days[ds] || {};
     if (day.status === 'planned') planned++;
     if (day.status === 'done') done++;
-    const cls = [
-      'cell', day.status || '', ds === t ? 'today' : '', ds < s.startDate ? 'before' : '', ds === s.weddingDate ? 'wed' : '',
-    ].join(' ');
-    cells += `<button class="${cls}" data-act="open-day" data-date="${ds}" aria-label="${esc(fmt(ds, { weekday: 'long', day: 'numeric', month: 'long' }))}">${ds === s.weddingDate ? '♥' : d}${day.creatine ? '<i class="cr"></i>' : ''}</button>`;
+    const hasType = !!(day.type && day.status);
+    const cls = ['cell', day.status || '', ds === t ? 'today' : '', ds < s.startDate ? 'before' : '', ds === s.weddingDate ? 'wed' : ''].join(' ');
+    cells += `<button class="${cls}" data-act="open-day" data-date="${ds}" aria-label="${esc(fmt(ds, { weekday: 'long', day: 'numeric', month: 'long' }))}"><span class="d">${ds === s.weddingDate ? '♥' : d}</span>${hasType ? `<span class="t">${esc(SHORT[day.type] || day.type.slice(0, 5))}</span>` : ''}${day.status === 'planned' ? ringOverlay() : ''}${day.status === 'done' ? strikeOverlay() : ''}${day.creatine ? '<i class="cr"></i>' : ''}</button>`;
   }
+  const trail = (7 - ((lead + dim) % 7)) % 7;
+  for (let i = 0; i < trail; i++) cells += '<span class="cell out"></span>';
   return `
   <div class="cal-top">
-    <h1>${title}<small>${y}</small></h1>
-    <div class="nav">
-      <button class="icon-btn" data-act="cal-prev" aria-label="Mois précédent">${svg('left')}</button>
-      <button class="icon-btn" data-act="cal-next" aria-label="Mois suivant">${svg('right')}</button>
-    </div>
+    <button class="icon-btn" data-act="cal-prev" aria-label="Mois précédent">${svg('left')}</button>
+    <div><h1>${title}</h1><p class="yr">${y}</p></div>
+    <button class="icon-btn" data-act="cal-next" aria-label="Mois suivant">${svg('right')}</button>
   </div>
-  <div class="dow">${DOW.map((d) => `<span>${d}</span>`).join('')}</div>
-  <div class="cal-grid">${cells}</div>
+  <div class="cal">
+    <div class="dow">${DOW.map((d) => `<span>${d}</span>`).join('')}</div>
+    <div class="cal-grid">${cells}</div>
+  </div>
   <div class="legend">
-    <span><i></i>Séance prévue</span><span><i class="d"></i>Séance faite</span><span><i class="c"></i>Créatine prise</span>
+    <span class="g">${circleMark()}<span style="color:var(--encre)">Séance prévue</span></span>
+    <span>${crossMark()}Séance faite</span>
+    <span><i class="lgdot"></i>Créatine prise</span>
   </div>
   <div class="month-sum">
-    <p>${done} ${plural(done, 'faite', 'faites')}, ${planned} ${plural(planned, 'restante', 'restantes')} ce mois-ci.</p>
+    <p>${done} ${plural(done, 'faite', 'faites')}, ${planned} ${plural(planned, 'restante', 'restantes')} ce mois-ci</p>
     <button class="link" data-act="cal-today">Aujourd’hui</button>
   </div>
   <div class="actions"><button class="btn ghost block" data-act="open-rec">Programme récurrent</button></div>`;
 }
 
 function chartSVG() {
-  const s = S.settings, W = 340, H = 220, L = 34, R = 12, T = 16, B = 26;
+  const s = S.settings, W = 340, H = 230, L = 36, R = 14, T = 16, B = 28;
   const t0 = +parse(s.startDate), t1 = +parse(s.weddingDate);
   const ws = sortedWeights();
   const vals = [s.startWeight, s.goalWeight, ...ws.map((w) => w.kg)];
   const lo = Math.floor(Math.min(...vals) - 1), hi = Math.ceil(Math.max(...vals) + 1);
   const X = (d) => L + Math.min(1, Math.max(0, (+parse(d) - t0) / (t1 - t0))) * (W - L - R);
   const Y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+  const f = (n) => n.toFixed(1);
   let grid = '';
   for (let i = 0; i <= 4; i++) {
     const v = lo + ((hi - lo) * i) / 4;
-    grid += `<line x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L - 6}" y="${(Y(v) + 3).toFixed(1)}" text-anchor="end">${Math.round(v * 2) / 2}</text>`;
+    grid += `<line x1="${L}" x2="${W - R}" y1="${f(Y(v))}" y2="${f(Y(v))}"/><text x="${L - 8}" y="${f(Y(v) + 4)}" text-anchor="end">${Math.round(v * 2) / 2}</text>`;
   }
   const pts = ws.map((w) => [X(w.date), Y(w.kg)]);
-  const line = pts.length > 1 ? `<path class="line" d="M${pts.map((p) => p.map((n) => n.toFixed(1)).join(' ')).join('L')}"/>` : '';
-  const dots = pts.map((p) => `<circle class="pt" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${pts.length > 20 ? 2.5 : 4}"/>`).join('');
+  // courbe lissée (spline de Catmull-Rom convertie en Bézier)
+  let d = '';
+  if (pts.length > 1) {
+    d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+      d += `C${f(c1[0])} ${f(c1[1])} ${f(c2[0])} ${f(c2[1])} ${f(p2[0])} ${f(p2[1])}`;
+    }
+  }
+  const area = pts.length > 1 ? `<path d="${d}L${f(pts[pts.length - 1][0])} ${H - B}L${f(pts[0][0])} ${H - B}Z" fill="url(#cg)"/>` : '';
+  const line = pts.length > 1 ? `<path class="line" d="${d}"/>` : '';
+  const dots = pts.map((p) => `<circle class="pt" cx="${f(p[0])}" cy="${f(p[1])}" r="${pts.length > 20 ? 2.6 : 4.6}"/>`).join('');
   const tx = X(todayStr());
   return `
   <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Courbe de poids">
+    <defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--or);stop-opacity:.2"/><stop offset="1" style="stop-color:var(--or);stop-opacity:0"/></linearGradient></defs>
     <g class="grid">${grid}</g>
-    <line class="todayline" x1="${tx.toFixed(1)}" x2="${tx.toFixed(1)}" y1="${T}" y2="${H - B}"/>
-    <path class="ideal" d="M${L} ${Y(s.startWeight).toFixed(1)}L${W - R} ${Y(s.goalWeight).toFixed(1)}"/>
-    ${line}${dots}
-    <circle class="goalpt" cx="${W - R}" cy="${Y(s.goalWeight).toFixed(1)}" r="5"/>
+    <line class="todayline" x1="${f(tx)}" x2="${f(tx)}" y1="${T}" y2="${H - B}"/>
+    <path class="ideal" d="M${L} ${f(Y(s.startWeight))}L${W - R} ${f(Y(s.goalWeight))}"/>
+    ${area}${line}${dots}
+    <circle class="goalpt" cx="${W - R}" cy="${f(Y(s.goalWeight))}" r="6"/>
     <text x="${L}" y="${H - 6}">${esc(fmt(s.startDate, { day: 'numeric', month: 'short' }))}</text>
     <text x="${W - R}" y="${H - 6}" text-anchor="end">${esc(fmt(s.weddingDate, { day: 'numeric', month: 'short' }))}</text>
   </svg>`;
@@ -436,21 +554,21 @@ function viewWeight() {
       cls = dv === 0 ? 'mute' : good ? 'good' : 'up';
       txt = dv === 0 ? '=' : `${dv > 0 ? '+' : '−'}${kgf(Math.abs(dv))}`;
     }
-    return `<li><div class="d">${esc(fmt(w.date, { weekday: 'long', day: 'numeric', month: 'long' }))}</div><span class="k">${kgf(w.kg)}</span><span class="delta ${cls}">${txt}</span><button class="x-btn" data-act="del-weight" data-id="${w.id}" aria-label="Supprimer cette pesée">×</button></li>`;
+    return `<li><div class="d"><b>${esc(fmt(w.date, { day: 'numeric', month: 'long', year: 'numeric' }))}</b><small>${esc(fmt(w.date, { weekday: 'long' }))}</small></div><span class="k">${fixedNum(kgf(w.kg))}</span><span class="delta ${cls}">${fixedNum(txt)}</span><button class="x-btn" data-act="del-weight" data-id="${w.id}" aria-label="Supprimer la pesée du ${esc(fmt(w.date, { day: 'numeric', month: 'long', year: 'numeric' }))}">×</button></li>`;
   }).join('');
   const lost = Math.round((first - cur) * 10) / 10;
   return `
   <div class="page-title"><h1>Poids</h1><button class="btn sm" data-act="open-weight">Me peser</button></div>
   <div class="chart-wrap">${chartSVG()}</div>
   <div class="chart-legend"><span>Tes pesées</span><span class="i">Trajectoire vers le grand jour</span></div>
-  <section class="sec facts" style="margin-top:22px;padding:0">
+  <div class="facts">
     <div class="fact"><b>${kgf(first)}</b><span>départ</span></div>
     <div class="fact"><b>${kgf(cur)}</b><span>actuel</span></div>
     <div class="fact"><b>${kgf(s.goalWeight)}</b><span>objectif</span></div>
-  </section>
+  </div>
   <section class="sec">
-    <h2>Historique</h2>
-    ${ws.length ? `<p class="small mute" style="margin:-4px 0 8px">${lost === 0 ? 'Aucun écart depuis le départ.' : `${lost > 0 ? '−' : '+'}${kgf(Math.abs(lost))} kg depuis le départ.`}</p><ul class="hist">${hist}</ul>` : '<p class="mute">Aucune pesée pour l’instant. Pèse-toi chaque dimanche, à jeun, pour comparer ce qui est comparable.</p>'}
+    <h2 class="sec-t"><span>Historique</span></h2>
+    ${ws.length ? `<p class="small mute center" style="margin:-8px 0 10px">${lost === 0 ? 'Aucun écart depuis le départ.' : `${lost > 0 ? '−' : '+'}${kgf(Math.abs(lost))} kg depuis le départ.`}</p><ul class="hist">${hist}</ul>` : '<p class="mute center">Aucune pesée pour l’instant. Pèse-toi chaque dimanche, à jeun, pour comparer ce qui est comparable.</p>'}
   </section>`;
 }
 
@@ -461,14 +579,11 @@ function viewPhotos() {
   if (!list.length) {
     return `${head}<div class="empty"><p>Ta première photo, c’est le point de départ.</p><p class="small">Même lumière, même endroit, même heure : c’est ce qui rend la comparaison parlante.</p></div>`;
   }
-  const groups = {};
-  [...list].reverse().forEach((p) => { (groups[p.date.slice(0, 7)] ||= []).push(p); });
   const canCompare = POSES.some((po) => list.filter((p) => p.pose === po).length >= 2);
+  const num = new Map(list.map((p, i) => [p.id, i + 1]));
   return `${head}
   ${canCompare ? '<div class="actions"><button class="btn ghost block" data-act="compare">Comparer avant et maintenant</button></div>' : ''}
-  ${Object.keys(groups).map((k) => `
-    <h2 class="month-h">${esc(parse(k + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))}</h2>
-    <div class="pgrid">${groups[k].map((p) => `<button class="ph" data-act="open-photo" data-id="${p.id}"><img src="${p.thumb}" alt="Photo du ${esc(fmt(p.date))}" loading="lazy"><span class="cap">${esc(fmt(p.date))}<small>${esc(p.pose)}${p.kg ? ' · ' + kgf(p.kg) + ' kg' : ''}</small></span></button>`).join('')}</div>`).join('')}`;
+  <div class="pgrid">${list.map((p) => `<button class="ph" data-act="open-photo" data-id="${p.id}" aria-label="Photo ${num.get(p.id)}, ${esc(fmt(p.date))}"><span class="fr"><img src="${p.thumb}" alt="" loading="lazy"></span><span class="cap">N° ${pad(num.get(p.id))}<small>${esc(fmt(p.date, { day: 'numeric', month: 'long', year: 'numeric' }))}</small></span></button>`).join('')}</div>`;
 }
 
 function settingsForm(v, onboarding) {
@@ -509,24 +624,26 @@ function readSettingsForm() {
 function viewMore() {
   return `
   <div class="page-title"><h1>Réglages</h1></div>
-  <section class="sec" style="border:0">${settingsForm(S.settings, false)}</section>
-  ${DEMO ? `<section class="sec"><h2>Mode démo</h2><p class="small mute" style="margin-bottom:16px">Pas encore de serveur : tes données restent sur cet appareil. Elles seront remplacées par la vraie base une fois connectée.</p><button class="btn ghost block" data-act="demo-sample">Charger des données d’exemple</button><button class="btn danger block" style="margin-top:10px" data-act="demo-reset">Tout effacer</button></section>` : ''}
-  <section class="sec">
+  <section class="sec">${settingsForm(S.settings, false)}</section>
+  ${DEMO ? `<section class="sec"><h2 class="sec-t"><span>Mode démo</span></h2><p class="small mute center" style="margin:-6px 0 18px">Pas encore de serveur : tes données restent sur cet appareil. Elles seront remplacées par la vraie base une fois connectée.</p><button class="btn ghost block" data-act="demo-sample">Charger des données d’exemple</button><button class="btn danger block" style="margin-top:10px" data-act="demo-reset">Tout effacer</button></section>` : ''}
+  <section class="sec" style="padding-bottom:20px">
     <button class="btn ghost block" data-act="logout">Se déconnecter</button>
-    <p class="small mute" style="margin-top:16px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
+    <p class="small mute center" style="margin-top:18px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
+    <p class="small mute center" style="margin-top:6px">Version 12</p>
   </section>`;
 }
 
 const VIEWS = { home: viewHome, cal: viewCal, weight: viewWeight, photos: viewPhotos, more: viewMore };
-const TABS = [['home', 'Aujourd’hui', 'today'], ['cal', 'Calendrier', 'cal'], ['weight', 'Poids', 'weight'], ['photos', 'Photos', 'photos'], ['more', 'Réglages', 'more']];
+const TABS = [['home', 'Accueil', 'today'], ['cal', 'Calendrier', 'cal'], ['weight', 'Poids', 'weight'], ['photos', 'Photos', 'photos'], ['more', 'Réglages', 'more']];
 
 function render() {
   if (!S.settings) return;
   document.body.classList.remove('bare');
   $('#view').innerHTML = VIEWS[S.tab]();
+  if (S.tab === 'home') animateCount();
   const tabs = $('#tabs');
   tabs.hidden = false;
-  tabs.innerHTML = TABS.map(([k, label, ic]) => `<button class="${S.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}" aria-label="${label}" ${S.tab === k ? 'aria-current="page"' : ''}>${svg(ic)}<span>${label}</span></button>`).join('');
+  tabs.innerHTML = TABS.map(([k, label, ic]) => `<button class="${S.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}" aria-label="${label}" ${S.tab === k ? 'aria-current="page"' : ''}>${label}</button>`).join('');
 }
 
 /* =====================================================
@@ -540,12 +657,12 @@ function showLogin() {
   document.body.classList.add('bare');
   $('#view').innerHTML = `
   <div class="gate">
-    ${RINGS}
-    <h1>Avant<br>le oui</h1>
-    <p class="lead">Ton carnet d’entraînement jusqu’au mariage.</p>
-    <label class="field"><span>Mot de passe</span><input id="pw" type="password" autocomplete="current-password"></label>
-    <p class="err" id="login-err"></p>
-    <button class="btn block" data-act="login">Entrer</button>
+    <div class="gate-top">${brand()}<p class="lead">Ton carnet d’entraînement jusqu’au mariage.</p></div>
+    <div class="gate-card">
+      <label class="field"><span>Mot de passe</span><input id="pw" type="password" autocomplete="current-password"></label>
+      <p class="err" id="login-err"></p>
+      <button class="btn block" data-act="login">Entrer</button>
+    </div>
   </div>`;
   setTimeout(() => { const i = $('#pw'); if (i) i.focus(); }, 50);
 }
@@ -575,10 +692,8 @@ function showOnboarding() {
   document.body.classList.add('bare');
   $('#view').innerHTML = `
   <div class="gate">
-    ${RINGS}
-    <h1>Fixe la date.</h1>
-    <p class="lead">Quelques chiffres pour dérouler ton mètre jusqu’au grand jour.</p>
-    ${settingsForm({ name: '', weddingDate: plusMonths(6), startDate: addDays(todayStr(), -1), startWeight: '', goalWeight: '', creatineDose: 5 }, true)}
+    <div class="gate-top">${rings('gate-rings')}<h1>Fixe<br>la date</h1><p class="lead">Quelques chiffres pour lancer ton compte à rebours jusqu’au grand jour.</p></div>
+    <div class="gate-card">${settingsForm({ name: '', weddingDate: plusMonths(6), startDate: addDays(todayStr(), -1), startWeight: '', goalWeight: '', creatineDose: 5 }, true)}</div>
   </div>`;
 }
 
@@ -639,6 +754,17 @@ function closeSheet(instant) {
   setTimeout(() => { if (!curSheet) w.hidden = true; }, 280);
 }
 
+/* --- Confirmation (le confirm() du navigateur est bloqué dans certains contextes) --- */
+let confirmCb = null;
+function askConfirm(title, text, label, cb) {
+  confirmCb = cb;
+  openSheet(() => `
+  <h3>${esc(title)}</h3>
+  <p class="sub">${esc(text)}</p>
+  <button class="btn danger block" data-act="confirm-yes">${esc(label)}</button>
+  <button class="btn ghost block" style="margin-top:10px" data-act="close-sheet">Annuler</button>`);
+}
+
 /* --- Jour --- */
 let daySheetDate = null;
 function daySheet() {
@@ -646,11 +772,7 @@ function daySheet() {
   return `
   <h3>${esc(fmt(d, { weekday: 'long', day: 'numeric', month: 'long' }))}</h3>
   <p class="sub">${d === S.settings.weddingDate ? 'Le grand jour.' : d > todayStr() ? 'À venir' : d === todayStr() ? 'Aujourd’hui' : 'Passé'}</p>
-  <div class="seg">
-    <button class="${!day.status ? 'on' : ''}" data-act="day-status" data-v="">Repos</button>
-    <button class="${day.status === 'planned' ? 'on' : ''}" data-act="day-status" data-v="planned">Prévue</button>
-    <button class="${day.status === 'done' ? 'on done' : ''}" data-act="day-status" data-v="done">Faite</button>
-  </div>
+  ${picks('day-status', day.status)}
   <span class="lbl">Type de séance</span>
   <div class="chips">${TYPES.map((t) => `<button class="chip ${day.type === t ? 'on' : ''}" data-act="day-type" data-v="${t}">${t}</button>`).join('')}</div>
   <div class="toggle-row"><span>Créatine prise</span><button class="switch ${day.creatine ? 'on' : ''}" data-act="day-creatine" role="switch" aria-checked="${day.creatine}" aria-label="Créatine prise"></button></div>
@@ -692,12 +814,18 @@ function recDates() {
 }
 function recSheet() {
   const n = recDates().length;
+  const t = todayStr();
+  const pending = Object.values(S.days).filter((d) => d.status === 'planned' && d.date >= t).length;
+  const none = recDays.size === 0;
+  const msg = none
+    ? (pending ? `Aucun jour choisi : les ${pending} ${plural(pending, 'séance prévue', 'séances prévues')} à venir seront retirées. Les séances faites ne bougent pas.` : 'Aucun jour choisi, et aucune séance prévue à venir.')
+    : `${n} ${plural(n, 'séance sera prévue', 'séances seront prévues')}.`;
   return `
   <h3>Programme récurrent</h3>
-  <p class="sub">Choisis tes jours d’entraînement : ils seront prévus jusqu’au mariage. Les séances déjà faites ne bougent pas.</p>
+  <p class="sub">Choisis tes jours d’entraînement : ils seront prévus jusqu’au mariage. Décoche tout pour retirer les séances prévues.</p>
   <div class="chips">${DOW_LONG.map((l, i) => `<button class="chip ${recDays.has(i) ? 'on' : ''}" data-act="rec-day" data-v="${i}">${l}</button>`).join('')}</div>
-  <p class="small mute" style="margin:20px 0">${n ? `${n} ${plural(n, 'séance sera prévue', 'séances seront prévues')}.` : 'Choisis au moins un jour.'}</p>
-  <button class="btn block" data-act="save-rec" ${n ? '' : 'disabled'}>Planifier</button>`;
+  <p class="small mute" style="margin:20px 0">${msg}</p>
+  <button class="btn ${none ? 'danger' : ''} block" data-act="save-rec" ${none && !pending ? 'disabled' : ''}>${none ? 'Retirer les séances prévues' : 'Planifier'}</button>`;
 }
 
 /* --- Ajout de photo --- */
@@ -712,6 +840,20 @@ function photoSheet() {
   <div class="chips">${POSES.map((p) => `<button class="chip ${pSheet.pose === p ? 'on' : ''}" data-act="pose" data-v="${p}">${p}</button>`).join('')}</div>
   <label class="field" style="margin-top:22px"><span>Date</span><input id="p-date" type="date" value="${pSheet.date}" max="${todayStr()}"></label>
   <button class="btn block" data-act="save-photo" ${pSheet.data && !pSheet.busy ? '' : 'disabled'}>${pSheet.busy ? 'Envoi…' : 'Enregistrer la photo'}</button>`;
+}
+
+/* --- Modifier une photo --- */
+let eSheet = { id: '', date: '', pose: 'Face' };
+function editPhotoSheet() {
+  const idx = S.photos.findIndex((x) => x.id === eSheet.id);
+  return `
+  <h3>Modifier la photo</h3>
+  <p class="sub">Vue ${pad(idx + 1)}</p>
+  <label class="field"><span>Date</span><input id="e-date" type="date" value="${eSheet.date}" max="${todayStr()}"></label>
+  <span class="lbl">Pose</span>
+  <div class="chips">${POSES.map((po) => `<button class="chip ${eSheet.pose === po ? 'on' : ''}" data-act="epose" data-v="${po}">${po}</button>`).join('')}</div>
+  <button class="btn block" style="margin-top:26px" data-act="save-photo-edit">Enregistrer</button>
+  <button class="btn danger block" style="margin-top:10px" data-act="del-photo" data-id="${eSheet.id}">Supprimer cette photo</button>`;
 }
 
 function resizeImage(file, max, q) {
@@ -744,6 +886,26 @@ async function fullImage(id) {
   return S.full[id];
 }
 
+function viewerBar(p) {
+  return `
+      <button class="icon-btn" data-act="photo-step" data-v="-1" aria-label="Photo plus ancienne" ${viewer.i === 0 ? 'disabled' : ''}>${svg('left')}</button>
+      <div class="ov-mid"><button class="btn ghost sm" data-act="edit-photo" data-id="${p.id}">Modifier</button><button class="btn danger sm" data-act="ask-del-photo" data-id="${p.id}">Supprimer</button></div>
+      <button class="icon-btn" data-act="photo-step" data-v="1" aria-label="Photo plus récente" ${viewer.i === viewer.ids.length - 1 ? 'disabled' : ''}>${svg('right')}</button>`;
+}
+function viewerConfirmBar(p) {
+  return `
+      <p class="ov-q">Supprimer cette photo ?</p>
+      <div class="ov-mid"><button class="btn ghost sm" data-act="cancel-del-photo" data-id="${p.id}">Annuler</button><button class="btn sm ov-yes" data-act="del-photo-yes" data-id="${p.id}">Oui, supprimer</button></div>`;
+}
+async function deletePhoto(id) {
+  try {
+    await api('/api/photos/' + id, { method: 'DELETE' });
+    S.photos = S.photos.filter((p) => p.id !== id);
+    delete S.full[id];
+    closeSheet(true); closeOverlay(); render(); toast('Photo supprimée');
+  } catch (err) { fail(err); }
+}
+
 async function showViewer() {
   const id = viewer.ids[viewer.i];
   const p = S.photos.find((x) => x.id === id);
@@ -751,11 +913,7 @@ async function showViewer() {
   overlay(`
     <div class="ov-top"><div class="cap">${esc(fmt(p.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}<small>${esc(p.pose)}${p.kg ? ' · ' + kgf(p.kg) + ' kg' : ''}</small></div><button class="icon-btn" data-act="close-overlay" aria-label="Fermer"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <div class="ov-stage" id="stage"><img src="${p.thumb}" alt="" style="filter:blur(2px)"></div>
-    <div class="ov-bottom">
-      <button class="icon-btn" data-act="photo-step" data-v="-1" aria-label="Photo plus ancienne" ${viewer.i === 0 ? 'disabled' : ''}>${svg('left')}</button>
-      <button class="btn danger sm" data-act="del-photo" data-id="${p.id}">Supprimer</button>
-      <button class="icon-btn" data-act="photo-step" data-v="1" aria-label="Photo plus récente" ${viewer.i === viewer.ids.length - 1 ? 'disabled' : ''}>${svg('right')}</button>
-    </div>`);
+    <div class="ov-bottom">${viewerBar(p)}</div>`);
   try {
     const data = await fullImage(id);
     const st = $('#stage');
@@ -806,10 +964,12 @@ document.addEventListener('click', async (e) => {
     case 'logout': token.v = null; showLogin(); break;
     case 'demo-sample': demoSeed(); applyState(await api('/api/state')); S.tab = 'home'; render(); window.scrollTo(0, 0); toast('Données d’exemple chargées'); break;
     case 'demo-reset':
-      if (!confirm('Tout effacer et recommencer ?')) break;
-      demoDB = { settings: null, days: {}, weights: [], photos: [] }; demoSave();
-      S.settings = null; S.days = {}; S.weights = []; S.photos = []; S.photosLoaded = false; S.full = {};
-      showOnboarding(); break;
+      askConfirm('Tout effacer ?', 'Toutes les données de la démo seront supprimées.', 'Tout effacer', async () => {
+        demoDB = { settings: null, days: {}, weights: [], photos: [] }; demoSave();
+        S.settings = null; S.days = {}; S.weights = []; S.photos = []; S.photosLoaded = false; S.full = {};
+        showOnboarding();
+      });
+      break;
     case 'save-onboarding': saveSettings(true); break;
     case 'save-settings': saveSettings(false); break;
 
@@ -828,12 +988,21 @@ document.addEventListener('click', async (e) => {
     case 'open-rec': openSheet(recSheet); break;
     case 'rec-day': { const n = Number(v); recDays.has(n) ? recDays.delete(n) : recDays.add(n); refreshSheet(); break; }
     case 'save-rec': {
-      const dates = recDates();
       el.disabled = true;
       try {
-        await api('/api/days/bulk', { method: 'POST', body: { dates } });
-        dates.forEach((d) => { if (!S.days[d] || S.days[d].status !== 'done') S.days[d] = { ...(S.days[d] || blankDay(d)), status: 'planned' }; });
-        closeSheet(); render(); toast(`${dates.length} ${plural(dates.length, 'séance prévue', 'séances prévues')}`);
+        if (!recDays.size) {
+          await api('/api/days/clear-planned', { method: 'POST', body: { from: t } });
+          Object.keys(S.days).forEach((k) => {
+            const d = S.days[k];
+            if (d.status === 'planned' && k >= t) { if (!d.type && !d.note && !d.creatine) delete S.days[k]; else S.days[k] = { ...d, status: '' }; }
+          });
+          closeSheet(); render(); toast('Séances prévues retirées');
+        } else {
+          const dates = recDates();
+          await api('/api/days/bulk', { method: 'POST', body: { dates } });
+          dates.forEach((d) => { if (!S.days[d] || S.days[d].status !== 'done') S.days[d] = { ...(S.days[d] || blankDay(d)), status: 'planned' }; });
+          closeSheet(); render(); toast(`${dates.length} ${plural(dates.length, 'séance prévue', 'séances prévues')}`);
+        }
       } catch (err) { fail(err); el.disabled = false; }
       break;
     }
@@ -857,10 +1026,13 @@ document.addEventListener('click', async (e) => {
       } catch (err) { fail(err); el.disabled = false; }
       break;
     }
-    case 'del-weight':
-      if (!confirm('Supprimer cette pesée ?')) break;
-      try { await api('/api/weights/' + el.dataset.id, { method: 'DELETE' }); S.weights = S.weights.filter((w) => w.id !== el.dataset.id); render(); } catch (err) { fail(err); }
+    case 'del-weight': {
+      const id = el.dataset.id;
+      askConfirm('Supprimer cette pesée ?', 'Elle sera effacée de l’historique et de la courbe.', 'Supprimer', async () => {
+        try { await api('/api/weights/' + id, { method: 'DELETE' }); S.weights = S.weights.filter((w) => w.id !== id); render(); toast('Pesée supprimée'); } catch (err) { fail(err); }
+      });
       break;
+    }
 
     case 'open-photo-add': pSheet = { pose: 'Face', date: t, data: '', thumb: '', busy: false }; openSheet(photoSheet); break;
     case 'pose': pSheet.date = ($('#p-date') || {}).value || pSheet.date; pSheet.pose = v; refreshSheet(); break;
@@ -880,19 +1052,44 @@ document.addEventListener('click', async (e) => {
     case 'open-photo':
       viewer = { ids: S.photos.map((p) => p.id), i: S.photos.findIndex((p) => p.id === el.dataset.id) };
       showViewer(); break;
-    case 'photo-step': viewer.i = Math.max(0, Math.min(viewer.ids.length - 1, viewer.i + Number(v))); showViewer(); break;
-    case 'del-photo':
-      if (!confirm('Supprimer cette photo ?')) break;
+    case 'edit-photo': {
+      const ph = S.photos.find((x) => x.id === el.dataset.id);
+      if (!ph) break;
+      eSheet = { id: ph.id, date: ph.date, pose: ph.pose };
+      openSheet(editPhotoSheet); break;
+    }
+    case 'epose': eSheet.date = ($('#e-date') || {}).value || eSheet.date; eSheet.pose = v; refreshSheet(); break;
+    case 'save-photo-edit': {
+      const date = $('#e-date').value;
+      if (!date) return toast('Choisis une date.', true);
+      el.disabled = true;
       try {
-        await api('/api/photos/' + el.dataset.id, { method: 'DELETE' });
-        S.photos = S.photos.filter((p) => p.id !== el.dataset.id);
-        delete S.full[el.dataset.id];
-        closeOverlay(); render();
-      } catch (err) { fail(err); }
+        const upd = await api('/api/photos/' + eSheet.id, { method: 'PUT', body: { date, pose: eSheet.pose } });
+        S.photos = S.photos.map((x) => (x.id === upd.id ? { ...x, date: upd.date, pose: upd.pose } : x));
+        S.photos.sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
+        closeSheet(); render();
+        viewer = { ids: S.photos.map((x) => x.id), i: S.photos.findIndex((x) => x.id === upd.id) };
+        showViewer(); toast('Photo modifiée');
+      } catch (err) { fail(err); el.disabled = false; }
       break;
+    }
+    case 'photo-step': viewer.i = Math.max(0, Math.min(viewer.ids.length - 1, viewer.i + Number(v))); showViewer(); break;
+    case 'del-photo': { // depuis la fenêtre « Modifier » : confirmation dans une fenêtre
+      const id = el.dataset.id;
+      askConfirm('Supprimer cette photo ?', 'Elle sera définitivement effacée.', 'Supprimer', () => deletePhoto(id));
+      break;
+    }
+    case 'ask-del-photo': case 'cancel-del-photo': { // depuis la visionneuse : confirmation dans la barre du bas
+      const p = S.photos.find((x) => x.id === el.dataset.id);
+      const bar = document.querySelector('#overlay .ov-bottom');
+      if (p && bar) bar.innerHTML = act === 'ask-del-photo' ? viewerConfirmBar(p) : viewerBar(p);
+      break;
+    }
+    case 'del-photo-yes': await deletePhoto(el.dataset.id); break;
     case 'compare': showCompare(); break;
     case 'close-overlay': closeOverlay(); break;
     case 'close-sheet': closeSheet(); break;
+    case 'confirm-yes': { const cb = confirmCb; confirmCb = null; closeSheet(); if (cb) await cb(); break; }
   }
 });
 
@@ -930,6 +1127,8 @@ setInterval(() => { if (!DEMO && !document.hidden && token.v) fetch(API + '/api/
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.settings && S.tab !== 'more') render(); });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+
 
 boot();
 })();

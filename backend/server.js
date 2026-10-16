@@ -187,6 +187,16 @@ app.post('/api/days/bulk', wrap(async (req, res) => {
   res.json({ planned: ops.length });
 }));
 
+/* Retirer les séances prévues à venir (les séances faites ne bougent pas) */
+app.post('/api/days/clear-planned', wrap(async (req, res) => {
+  const from = req.body?.from;
+  if (!isDate(from)) return res.status(400).json({ error: 'Date invalide.' });
+  const q = { status: 'planned', date: { $gte: from } };
+  const del = await Day.deleteMany({ ...q, type: '', note: '', creatine: false });
+  const upd = await Day.updateMany(q, { $set: { status: '' } });
+  res.json({ cleared: del.deletedCount + upd.modifiedCount });
+}));
+
 /* Pesées (une par date) */
 app.post('/api/weights', wrap(async (req, res) => {
   const { date, kg } = req.body || {};
@@ -225,6 +235,16 @@ app.post('/api/photos', wrap(async (req, res) => {
   });
   const { data: _omit, ...meta } = doc.toObject();
   res.json(out(meta));
+}));
+
+app.put('/api/photos/:id', wrap(async (req, res) => {
+  const { date, pose } = req.body || {};
+  if (!isDate(date)) return res.status(400).json({ error: 'Date invalide.' });
+  const upd = { date };
+  if (typeof pose === 'string') upd.pose = pose.slice(0, 20);
+  const doc = await Photo.findByIdAndUpdate(req.params.id, upd, { new: true }).select('-data').lean();
+  if (!doc) return res.status(404).json({ error: 'Photo introuvable.' });
+  res.json(out(doc));
 }));
 
 app.delete('/api/photos/:id', wrap(async (req, res) => {
