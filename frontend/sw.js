@@ -1,5 +1,5 @@
 // L'appli s'ouvre instantanément depuis le cache ; le réseau ne sert qu'à se mettre à jour.
-const CACHE = 'avant-le-oui-v17';
+const CACHE = 'avant-le-oui-v18';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'fonts/jost.woff', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -12,7 +12,8 @@ self.addEventListener('activate', (e) => {
 // Réseau d'abord, mais pas plus de 2 secondes : au-delà, on ouvre tout de suite depuis le cache
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   const fromNetwork = fetch(req).then((res) => {
     if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
     return res;

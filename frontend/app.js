@@ -4,9 +4,10 @@
 /* =====================================================
    Config & constantes
    ===================================================== */
-const API = ((window.APP_CONFIG || {}).API_URL || '').replace(/\/$/, '');
+const RAW_API = String((window.APP_CONFIG || {}).API_URL ?? '');
+const API = RAW_API.replace(/\/$/, '');   // '/' devient '' : les requêtes partent vers /api/... du site (relayées par Netlify)
 // Pas de backend configuré : l'appli tourne en mode démo, données stockées sur l'appareil
-const DEMO = !API || API.includes('TON-API');
+const DEMO = RAW_API === '' || RAW_API.includes('TON-API');
 const TYPES = ['Pecs', 'Dos', 'Épaules', 'Bras', 'Jambes', 'Cardio', 'Handstand', 'Abdos'];
 const POSES = ['Face', 'Profil', 'Dos'];
 // Abréviations pour les petites cases du calendrier
@@ -128,9 +129,10 @@ const S = {
 /* Le serveur gratuit s'endort : on patiente et on réessaie tout seul pendant ~100 s, avec un compteur */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WAKE_MAX = Number((window.APP_CONFIG || {}).WAKE_MAX) || 100000;
-const VERSION = 17;
+const VERSION = 18;
 let lastNet = '';
-const netDetail = () => `${lastNet || 'aucune réponse'} — serveur : ${API.replace('https://', '')} — version ${VERSION}`;
+const serverLabel = () => (API ? API.replace(/^https?:\/\//, '') : `via ${location.host}/api`);
+const netDetail = () => `${lastNet || 'aucune réponse'} — serveur : ${serverLabel()} — version ${VERSION}`;
 
 function wakeUi(sec) {
   const txt = `Le serveur se réveille… ${sec} s. Ça peut prendre jusqu’à une minute et demie.`;
@@ -686,7 +688,7 @@ function viewMore() {
   <section class="sec" style="padding-bottom:20px">
     <button class="btn ghost block" data-act="logout">Se déconnecter</button>
     <p class="small mute center" style="margin-top:18px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
-    <p class="small mute center" style="margin-top:6px">Version 17</p>
+    <p class="small mute center" style="margin-top:6px">Version 18</p>
   </section>`;
 }
 
@@ -720,7 +722,7 @@ function showLogin() {
       <label class="field"><span>Mot de passe</span><input id="pw" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password"></label>
       <p class="err" id="login-err"></p>
       <button class="btn block" data-act="login">Entrer</button>
-      <p class="small mute center" style="margin-top:22px">${DEMO ? 'Mode démo' : `Serveur : ${esc(API.replace('https://', ''))}`} · version ${VERSION}</p>
+      <p class="small mute center" style="margin-top:22px">${DEMO ? 'Mode démo' : `Serveur : ${esc(serverLabel())}`} · version ${VERSION}</p>
     </div>
   </div>`;
   setTimeout(() => { const i = $('#pw'); if (i) i.focus(); }, 50);

@@ -92,7 +92,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 /* Connexion (mot de passe unique) avec petite protection anti-force-brute */
 const attempts = new Map();
 app.post('/api/login', (req, res) => {
-  const ip = req.ip;
+  const ip = req.headers['x-nf-client-connection-ip'] || req.ip;
   const rec = attempts.get(ip) || { n: 0, until: 0 };
   if (rec.until > Date.now()) {
     return res.status(429).json({ error: 'Trop d’essais. Réessaie dans quelques minutes.' });
