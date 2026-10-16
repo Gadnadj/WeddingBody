@@ -129,7 +129,7 @@ const S = {
 /* Le serveur gratuit s'endort : on patiente et on réessaie tout seul pendant ~100 s, avec un compteur */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WAKE_MAX = Number((window.APP_CONFIG || {}).WAKE_MAX) || 100000;
-const VERSION = 18;
+const VERSION = 19;
 let lastNet = '';
 const serverLabel = () => (API ? API.replace(/^https?:\/\//, '') : `via ${location.host}/api`);
 const netDetail = () => `${lastNet || 'aucune réponse'} — serveur : ${serverLabel()} — version ${VERSION}`;
@@ -175,7 +175,8 @@ async function api(path, opts = {}) {
   };
   let res;
   try {
-    res = await netFetch(path, init, method === 'GET' || path === '/api/login');
+    // Réessai automatique pour tout, sauf l'envoi d'une photo (pour ne pas l'enregistrer en double)
+    res = await netFetch(path, init, !(method === 'POST' && path === '/api/photos'));
   } catch {
     throw new Error('Le serveur ne répond pas. Vérifie ta connexion puis réessaie.');
   }
@@ -688,7 +689,7 @@ function viewMore() {
   <section class="sec" style="padding-bottom:20px">
     <button class="btn ghost block" data-act="logout">Se déconnecter</button>
     <p class="small mute center" style="margin-top:18px">Tes données restent enregistrées. Tu les retrouveras en te reconnectant.</p>
-    <p class="small mute center" style="margin-top:6px">Version 18</p>
+    <p class="small mute center" style="margin-top:6px">Version 19</p>
   </section>`;
 }
 
@@ -906,7 +907,8 @@ function recSheet() {
   <h3>Programme récurrent</h3>
   <p class="sub">Choisis tes jours d’entraînement : ils seront prévus jusqu’au mariage. Décoche tout pour retirer les séances prévues.</p>
   <div class="chips">${DOW_LONG.map((l, i) => `<button class="chip ${recDays.has(i) ? 'on' : ''}" data-act="rec-day" data-v="${i}">${l}</button>`).join('')}</div>
-  <p class="small mute" style="margin:20px 0">${msg}</p>
+  <p class="small mute" style="margin:20px 0 10px">${msg}</p>
+  <p class="err" id="rec-err" style="margin:0 0 12px"></p>
   <button class="btn ${none ? 'danger' : ''} block" data-act="save-rec" ${none && !pending ? 'disabled' : ''}>${none ? 'Retirer les séances prévues' : 'Planifier'}</button>`;
 }
 
@@ -1070,9 +1072,13 @@ document.addEventListener('click', async (e) => {
     case 'open-rec': openSheet(recSheet); break;
     case 'rec-day': { const n = Number(v); recDays.has(n) ? recDays.delete(n) : recDays.add(n); refreshSheet(); break; }
     case 'save-rec': {
+      const label = el.textContent;
       el.disabled = true;
+      const showErr = (err) => { const er = $('#rec-err'); if (er && err.message !== 'unauth') er.textContent = err.message; };
+      const er0 = $('#rec-err'); if (er0) er0.textContent = '';
       try {
         if (!recDays.size) {
+          el.textContent = 'Un instant…';
           await api('/api/days/clear-planned', { method: 'POST', body: { from: t } });
           Object.keys(S.days).forEach((k) => {
             const d = S.days[k];
@@ -1081,11 +1087,16 @@ document.addEventListener('click', async (e) => {
           closeSheet(); render(); toast('Séances prévues retirées');
         } else {
           const dates = recDates();
-          await api('/api/days/bulk', { method: 'POST', body: { dates } });
-          dates.forEach((d) => { if (!S.days[d] || S.days[d].status !== 'done') S.days[d] = { ...(S.days[d] || blankDay(d)), status: 'planned' }; });
+          // petits lots : chaque requête reste courte, même avec un serveur ou une connexion lents
+          for (let k = 0; k < dates.length; k += 30) {
+            const chunk = dates.slice(k, k + 30);
+            el.textContent = `Planification… ${Math.min(k + 30, dates.length)}/${dates.length}`;
+            await api('/api/days/bulk', { method: 'POST', body: { dates: chunk } });
+            chunk.forEach((d) => { if (!S.days[d] || S.days[d].status !== 'done') S.days[d] = { ...(S.days[d] || blankDay(d)), status: 'planned' }; });
+          }
           closeSheet(); render(); toast(`${dates.length} ${plural(dates.length, 'séance prévue', 'séances prévues')}`);
         }
-      } catch (err) { fail(err); el.disabled = false; }
+      } catch (err) { fail(err); showErr(err); el.disabled = false; el.textContent = label; render(); }
       break;
     }
 

@@ -17,6 +17,12 @@ if (!MONGODB_URI || !APP_PASSWORD || !JWT_SECRET) {
   process.exit(1);
 }
 
+/* Le serveur ne doit jamais s'arrêter sur une erreur imprévue : on la note dans les logs et on continue */
+process.on('unhandledRejection', (e) => console.error('Promesse non gérée :', e));
+process.on('uncaughtException', (e) => console.error('Exception non gérée :', e));
+mongoose.connection.on('error', (e) => console.error('MongoDB :', e.message));
+mongoose.connection.on('disconnected', () => console.warn('MongoDB déconnecté, reconnexion automatique…'));
+
 /* ---------- Modèles ---------- */
 const clean = { versionKey: false };
 
@@ -121,6 +127,9 @@ app.use('/api', (req, res, next) => {
   }
 });
 
+const isDup = (e) => !!e && (e.code === 11000 || (Array.isArray(e.writeErrors) && e.writeErrors.length > 0 && e.writeErrors.every((w) => (w.code ?? w.err?.code) === 11000)));
+const retryDup = async (fn) => { try { return await fn(); } catch (e) { if (isDup(e)) return fn(); throw e; } };
+
 const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
   console.error(e);
   res.status(500).json({ error: 'Erreur serveur.' });
@@ -145,7 +154,7 @@ app.put('/api/settings', wrap(async (req, res) => {
   const b = req.body || {};
   if (!isDate(b.weddingDate) || !isDate(b.startDate)) return res.status(400).json({ error: 'Dates invalides.' });
   if (!isNum(b.startWeight) || !isNum(b.goalWeight)) return res.status(400).json({ error: 'Poids invalides.' });
-  const doc = await Settings.findOneAndUpdate(
+  const doc = await retryDup(() => Settings.findOneAndUpdate(
     { key: 'main' },
     {
       key: 'main',
@@ -157,7 +166,7 @@ app.put('/api/settings', wrap(async (req, res) => {
       creatineDose: isNum(b.creatineDose) ? b.creatineDose : 5,
     },
     { upsert: true, new: true, lean: true },
-  );
+  ));
   res.json(out(doc));
 }));
 
@@ -177,7 +186,7 @@ app.put('/api/days/:date', wrap(async (req, res) => {
     await Day.deleteOne({ date });
     return res.json({ date, deleted: true });
   }
-  const saved = await Day.findOneAndUpdate({ date }, { date, ...doc }, { upsert: true, new: true, lean: true });
+  const saved = await retryDup(() => Day.findOneAndUpdate({ date }, { date, ...doc }, { upsert: true, new: true, lean: true }));
   res.json(out(saved));
 }));
 
@@ -193,7 +202,7 @@ app.post('/api/days/bulk', wrap(async (req, res) => {
     if (cur && cur.status === 'done') continue;
     ops.push({ updateOne: { filter: { date }, update: { $set: { status: 'planned' } }, upsert: true } });
   }
-  if (ops.length) await Day.bulkWrite(ops);
+  if (ops.length) await retryDup(() => Day.bulkWrite(ops, { ordered: false }));
   res.json({ planned: ops.length });
 }));
 
@@ -211,7 +220,7 @@ app.post('/api/days/clear-planned', wrap(async (req, res) => {
 app.post('/api/weights', wrap(async (req, res) => {
   const { date, kg } = req.body || {};
   if (!isDate(date) || !isNum(kg) || kg < 20 || kg > 400) return res.status(400).json({ error: 'Pesée invalide.' });
-  const doc = await Weight.findOneAndUpdate({ date }, { date, kg }, { upsert: true, new: true, lean: true });
+  const doc = await retryDup(() => Weight.findOneAndUpdate({ date }, { date, kg }, { upsert: true, new: true, lean: true }));
   res.json(out(doc));
 }));
 
@@ -261,6 +270,14 @@ app.delete('/api/photos/:id', wrap(async (req, res) => {
   await Photo.deleteOne({ _id: req.params.id });
   res.json({ ok: true });
 }));
+
+/* Erreurs imprévues (corps illisible, fichier trop lourd…) : réponse claire au lieu d'un plantage */
+app.use((err, _req, res, _next) => {
+  console.error('Erreur :', err && err.message);
+  if (res.headersSent) return;
+  const tooBig = err && err.type === 'entity.too.large';
+  res.status(tooBig ? 413 : err && err.status ? err.status : 500).json({ error: tooBig ? 'Fichier trop lourd.' : 'Erreur serveur.' });
+});
 
 /* ---------- Démarrage ---------- */
 try {
